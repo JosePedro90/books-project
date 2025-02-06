@@ -1,4 +1,4 @@
-from rest_framework import status, views, viewsets
+from rest_framework import status, views, viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -14,6 +14,11 @@ class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
     permission_classes = [IsAuthenticated]
+
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'authors__name', 'isbn', 'isbn13']
+    ordering_fields = ['average_rating', 'ratings_count', 'original_publication_year']
+    ordering = ['title']
 
 
 class IngestionLogViewSet(viewsets.ReadOnlyModelViewSet):

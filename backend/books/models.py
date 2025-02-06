@@ -47,8 +47,8 @@ class Book(models.Model):
 
     language_code = models.CharField(max_length=10, null=True, blank=True)
 
-    average_rating = models.FloatField(null=True, blank=True)
-    ratings_count = models.IntegerField(null=True, blank=True)
+    average_rating = models.FloatField(null=True, blank=True, db_index=True)
+    ratings_count = models.IntegerField(null=True, blank=True, db_index=True)
     work_ratings_count = models.IntegerField(null=True, blank=True)
     work_text_reviews_count = models.IntegerField(null=True, blank=True)
 
