@@ -3,9 +3,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Book, IngestionLog
-from .serializers import (BookSerializer, CSVUploadSerializer,
-                          IngestionLogSerializer)
-from .services import process_csv
+from .serializers import (BookSerializer, IngestionLogSerializer)
+from .tasks import process_csv
 
 
 class BookViewSet(viewsets.ModelViewSet):
@@ -27,19 +26,21 @@ class IngestionLogViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class CSVUploadView(views.APIView):
-    """API view for uploading and processing CSV files."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        serializer = CSVUploadSerializer(data=request.data)
-        if serializer.is_valid():
-            file = serializer.validated_data['file']
-            books_created, errors = process_csv(file)
+        file = request.FILES.get('file')
+        if not file:
+            return Response({
+                "error": "No file provided."
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-            response_data = {
-                "message": f"CSV file processed successfully. {books_created} books added.",
-                "errors": errors if errors else "No errors encountered."
-            }
-            return Response(response_data, status=status.HTTP_201_CREATED)
+        admin_email = request.user.email or "admin@example.com"
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        file_data = file.read()
+        process_csv.delay(file_data, admin_email, file.name)
+
+        return Response({
+            "message": "CSV ingestion started. You will receive an email upon completion."
+        },
+                        status=status.HTTP_202_ACCEPTED)

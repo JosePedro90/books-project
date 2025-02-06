@@ -25,27 +25,25 @@ class Author(models.Model):
 
 class Book(models.Model):
     """Model for storing books with all fields from the CSV."""
-    goodreads_book_id = models.IntegerField(unique=True, null=True, blank=True)
+    goodreads_book_id = models.IntegerField(null=True, blank=True)
     best_book_id = models.IntegerField(
-        unique=True,
         null=True,
         blank=True,
     )
     work_id = models.IntegerField(
-        unique=True,
         null=True,
         blank=True,
     )
     books_count = models.IntegerField(default=1)
 
-    isbn = models.CharField(max_length=10, null=True, blank=True, unique=True)
-    isbn13 = models.CharField(max_length=13, null=True, blank=True, unique=True)
+    isbn = models.CharField(max_length=10, null=True, blank=True, unique=True, db_index=True)
+    isbn13 = models.CharField(max_length=13, null=True, blank=True, unique=True, db_index=True)
 
     authors = models.ManyToManyField("Author", related_name="books")
 
     original_publication_year = models.IntegerField(null=True, blank=True)
     original_title = models.CharField(max_length=255, null=True, blank=True)
-    title = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, db_index=True)
 
     language_code = models.CharField(max_length=10, null=True, blank=True)
 

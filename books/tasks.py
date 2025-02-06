@@ -1,10 +1,11 @@
 import csv
 import io
-from django.core.mail import send_mail
-from django.db import transaction
-from .models import Book, Author, IngestionLog
 
-from decimal import Decimal  # Import Decimal to safely convert large numbers
+from celery import shared_task
+from django.db import transaction
+
+from .emails import send_ingestion_report
+from .models import Book, Author, IngestionLog
 
 
 def format_isbn(value):
@@ -19,12 +20,42 @@ def format_isbn(value):
     if "e" in value.lower():
         return None  # Discard
 
-    # Simply return the value as a string (no int conversion)
     return value  # Keep it as a string to preserve leading zeros
 
 
-def process_csv(file):
-    """Process CSV file efficiently while ensuring correct author assignments and sending an email report."""
+def book_exists(row):
+    """Check if a book exists based on title and authors (mandatory), and optionally isbn13 or isbn."""
+    # Create identifiers for isbn13, isbn, title, and authors
+    isbn13 = format_isbn(row.get("isbn13", ""))
+    isbn = format_isbn(row.get("isbn", ""))
+    title = row.get("title", "").strip()
+    authors = row.get("authors", "").strip()
+
+    # Ensure title and authors are present before querying
+    if not title or not authors:
+        return False  # Title and authors are mandatory, return False if either is missing
+
+    # Create the base queryset
+    queryset = Book.objects.none()
+
+    # Check isbn13 and isbn only if they are present
+    if isbn13:
+        queryset |= Book.objects.filter(isbn13=isbn13)
+
+    if isbn:
+        queryset |= Book.objects.filter(isbn=isbn)
+
+    # Always check for title and authors
+    author_list = [author.strip() for author in authors.split(",")]
+    queryset |= Book.objects.filter(title=title, authors__name__in=author_list)
+
+    # Return if any records match
+    return queryset.exists()
+
+
+@shared_task
+def process_csv(file_data, admin_email, filename):
+    """Process CSV file where each row is handled independently to prevent blocking on failure."""
     books_processed = 0
     books_inserted = 0
     books_skipped = 0
@@ -32,29 +63,16 @@ def process_csv(file):
     authors_cache = {}
 
     try:
-        decoded_file = file.read().decode("utf-8")
+        decoded_file = file_data.decode("utf-8")
         csv_reader = csv.DictReader(io.StringIO(decoded_file))
 
-        # Fetch existing books based on isbn13, isbn, or title+authors fallback
-        existing_books = {
-            (book.isbn13 or book.isbn or f"{book.title}_{','.join(a.name for a in book.authors.all())}"): book
-            for book in Book.objects.prefetch_related("authors").all()
-        }
-        existing_book_keys = set(existing_books.keys())
-
-        with transaction.atomic():
-            for row in csv_reader:
-                try:
+        for row in csv_reader:
+            try:
+                with transaction.atomic():  # Each row has its own transaction
                     books_processed += 1
 
-                    # Determine book's unique identifier
-                    book_identifier = (
-                        row.get("isbn13") or row.get("isbn")
-                        or f"{row.get('title', '').strip()}_{row.get('authors', '').strip()}"
-                    )
-
-                    # Skip if the book already exists
-                    if book_identifier in existing_book_keys:
+                    # Check if the book already exists
+                    if book_exists(row):
                         books_skipped += 1
                         continue
 
@@ -67,7 +85,8 @@ def process_csv(file):
                             authors_cache[author_name] = author
                         author_instances.append(authors_cache[author_name])
 
-                    # Insert book one by one
+                    # Insert the new book
+                    #TODO: Improve the way to handle missing value and type conversion
                     book = Book.objects.create(
                         isbn13=format_isbn(row.get("isbn13", "")),
                         isbn=format_isbn(row.get("isbn", "")),
@@ -79,34 +98,40 @@ def process_csv(file):
                         original_publication_year=int(float(row["original_publication_year"]))
                         if row.get("original_publication_year") else None,
                         title=row.get("title", "").strip() or None,
+                        original_title=row.get("original_title", "").strip() or None,
                         language_code=row.get("language_code", "").strip() or None,
                         average_rating=float(row["average_rating"]) if row.get("average_rating") else None,
                         ratings_count=int(float(row["ratings_count"])) if row.get("ratings_count") else None,
                         image_url=row.get("image_url", "").strip() or None,
                         small_image_url=row.get("small_image_url", "").strip() or None,
+                        ratings_1=int(float(row["ratings_1"])) if row.get("ratings_1") else None,
+                        ratings_2=int(float(row["ratings_2"])) if row.get("ratings_2") else None,
+                        ratings_3=int(float(row["ratings_3"])) if row.get("ratings_3") else None,
+                        ratings_4=int(float(row["ratings_4"])) if row.get("ratings_4") else None,
+                        ratings_5=int(float(row["ratings_5"])) if row.get("ratings_5") else None,
+                        work_ratings_count=int(float(row["work_ratings_count"]))
+                        if row.get("work_ratings_count") else None,
+                        work_text_reviews_count=int(float(row["work_text_reviews_count"]))
                     )
 
                     # Assign authors immediately after inserting book
                     book.authors.set(author_instances)
-
-                    existing_book_keys.add(book_identifier)  # Mark book as inserted
                     books_inserted += 1
 
-                except Exception as e:
-                    errors.append(f"Error processing book '{row.get('title', 'Unknown')}': {str(e)}")
-                    continue
-
-        # Send email notification
-        #send_ingestion_report(books_processed, books_inserted, books_skipped, errors, file.name)
+            except Exception as e:
+                errors.append(f"Error processing book '{row.get('title', 'Unknown')}': {str(e)}")
+                continue  # Continue processing next row even if this one fails
 
         # Log the ingestion process
         IngestionLog.objects.create(
-            filename=file.name,
+            filename=filename,
             records_processed=books_inserted,
             errors="; ".join(errors) if errors else None,
         )
+        # Send report
+        send_ingestion_report(books_processed, books_inserted, books_skipped, errors, filename, admin_email)
 
-        return books_inserted, f"Processed: {books_processed}, Inserted: {books_inserted}, Skipped: {books_skipped}, Errors: {len(errors)}"
+        return books_inserted, errors
 
     except Exception as e:
         errors.append(str(e))
