@@ -18,6 +18,7 @@ class Reservation(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='reserved')
     reserved_at = models.DateTimeField(default=timezone.now)
     returned_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
         return f"{self.name} - {self.book.title} ({self.status})"

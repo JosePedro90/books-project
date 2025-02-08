@@ -17,3 +17,10 @@ class ReservationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This book is already reserved by another user.")
 
         return data
+
+
+class CurrentReservationSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Reservation
+        fields = ['status']

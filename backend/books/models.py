@@ -60,6 +60,8 @@ class Book(models.Model):
 
     image_url = models.URLField(null=True, blank=True)
     small_image_url = models.URLField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title

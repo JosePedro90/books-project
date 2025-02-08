@@ -1,9 +1,11 @@
-from rest_framework import status, views, viewsets, filters
+from urllib import request
+
+from rest_framework import status, views, viewsets, filters, permissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Book, IngestionLog
-from .serializers import (BookSerializer, IngestionLogSerializer)
+from .serializers import (BookSerializer, IngestionLogSerializer, CSVUploadSerializer)
 from .tasks import process_csv
 
 
@@ -13,12 +15,16 @@ class BookViewSet(viewsets.ModelViewSet):
     """
     queryset = Book.objects.all()
     serializer_class = BookSerializer
-    permission_classes = [IsAuthenticated]
 
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title', 'authors__name', 'isbn', 'isbn13']
-    ordering_fields = ['average_rating', 'ratings_count', 'original_publication_year']
+    ordering_fields = ['title', 'average_rating', 'ratings_count', 'original_publication_year']
     ordering = ['title']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:  # Allow any for list and retrieve
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
 
 
 class IngestionLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -40,7 +46,7 @@ class CSVUploadView(views.APIView):
                 "error": "No file provided."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        admin_email = request.user.email or "admin@example.com"
+        admin_email = request.user.email
 
         file_data = file.read()
         process_csv.delay(file_data, admin_email, file.name)
