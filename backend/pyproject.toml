@@ -15,6 +15,7 @@ python-dotenv = "^1.0.1"
 celery = "^5.4.0"
 redis = "^5.2.1"
 django-cors-headers = "^4.7.0"
+django-filter = "^24.3"
 
 
 [tool.poetry.group.dev.dependencies]

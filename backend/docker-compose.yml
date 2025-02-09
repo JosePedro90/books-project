@@ -1,0 +1,31 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_NAME=your_db_name
+      - DATABASE_USER=your_user
+      - DATABASE_PASSWORD=your_password
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - SECRET_KEY=your_secret_key
+      - DJANGO_SUPERUSER_PASSWORD=your_strong_password
+  db:
+    image: postgres:14
+    environment:
+      - POSTGRES_USER=your_user
+      - POSTGRES_PASSWORD=your_password
+      - POSTGRES_DB=your_db_name
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:latest
+
+volumes:
+  db_data:
