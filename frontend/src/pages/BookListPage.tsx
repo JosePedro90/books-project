@@ -15,10 +15,11 @@ import {
 
 import { useInfiniteBooks } from "../api/books";
 import BookItemCard from "../components/BookItemCard";
-import Select from "../components/ui/Select";
+
 import debounce from "lodash/debounce";
 import { BsArrowDown, BsArrowUp } from "react-icons/bs";
 import NavIcons from "../components/NavIcons";
+import Select from "../components/ui/select";
 
 const BookList = () => {
   const [search, setSearch] = useState("");
@@ -55,8 +56,6 @@ const BookList = () => {
     setIsAscending((prev) => !prev);
     setOrdering((prev) => (prev.startsWith("-") ? prev.slice(1) : `-${prev}`));
   };
-
-  console.log("reservationStatus", reservationStatus);
 
   const {
     data: books,

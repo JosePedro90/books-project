@@ -49,7 +49,6 @@ const BookDetailsPage = () => {
     },
   });
 
-  //TODO: For now I will handle authors as comma separated
   const handleSubmit = async (values: Partial<Book>) => {
     mutation.mutate(values);
   };

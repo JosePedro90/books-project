@@ -17,7 +17,7 @@ import {
   updateReservation,
 } from "../api/reservations";
 import { toaster } from "../components/ui/toaster";
-import Select from "./ui/Select";
+import Select from "./ui/select";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface BookReservationsProps {
