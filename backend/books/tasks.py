@@ -5,46 +5,10 @@ from celery import shared_task
 from django.db import transaction
 
 from .emails import send_ingestion_report
-from .models import Author, Book, IngestionLog, normalize_name
+from .models import Author, Book, IngestionLog
+from .utils import book_exists, clean_isbn, normalize_name
 
 
-def format_isbn(value):
-    """Ensure ISBN is stored correctly as a string without scientific notation issues."""
-    if not value:
-        return None
-    value = value.strip()
-
-    if "e" in value.lower():
-        return None
-
-    return value
-
-
-def book_exists(row):
-    """Check if a book exists based on title and authors (mandatory), and optionally isbn13 or isbn."""
-    isbn13 = format_isbn(row.get("isbn13", ""))
-    isbn = format_isbn(row.get("isbn", ""))
-    title = row.get("title", "").strip()
-    authors = row.get("authors", "").strip()
-
-    if not title or not authors:
-        return False
-
-    queryset = Book.objects.none()
-
-    if isbn13:
-        queryset |= Book.objects.filter(isbn13=isbn13)
-
-    if isbn:
-        queryset |= Book.objects.filter(isbn=isbn)
-
-    author_list = [author.strip() for author in authors.split(",")]
-    queryset |= Book.objects.filter(title=title, authors__name__in=author_list)
-
-    return queryset.exists()
-
-
-#TODO: Make this a bulk operation
 @shared_task
 def process_csv(file_data, admin_email, filename):
     """Process CSV file where each row is handled independently to prevent blocking on failure."""
@@ -85,8 +49,8 @@ def process_csv(file_data, admin_email, filename):
                             author_instances.append(author)
 
                     book = Book.objects.create(
-                        isbn13=format_isbn(row.get("isbn13", "")),
-                        isbn=format_isbn(row.get("isbn", "")),
+                        isbn13=clean_isbn(row.get("isbn13", "")),
+                        isbn=clean_isbn(row.get("isbn", "")),
                         goodreads_book_id=int(float(row["goodreads_book_id"]))
                         if row.get("goodreads_book_id") else None,
                         best_book_id=int(float(row["best_book_id"])) if row.get("best_book_id") else None,
@@ -127,7 +91,7 @@ def process_csv(file_data, admin_email, filename):
 
         send_ingestion_report(books_processed, books_inserted, books_skipped, errors, filename, admin_email)
 
-        return books_inserted, errors
+        return books_inserted, books_skipped, errors
 
     except Exception as e:
         errors.append(str(e))

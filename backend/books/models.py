@@ -1,12 +1,6 @@
-import unicodedata
 from django.db import models
 
-
-def normalize_name(name):
-    """Normalize author names: remove accents, extra spaces, and convert to lowercase."""
-    name = unicodedata.normalize("NFKD", name).encode("ASCII", "ignore").decode("utf-8")
-    name = " ".join(name.lower().split())
-    return name.replace(".", "")
+from books.utils import normalize_name
 
 
 class Author(models.Model):

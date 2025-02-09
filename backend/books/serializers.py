@@ -12,7 +12,7 @@ class AuthorSerializer(serializers.ModelSerializer):
 
 class BookSerializer(serializers.ModelSerializer):
     authors = AuthorSerializer(many=True, read_only=True)
-    authors_input = serializers.CharField(write_only=True)  # New field for input
+    authors_input = serializers.CharField(write_only=True)
     reserved = serializers.SerializerMethodField()
 
     class Meta:
@@ -26,14 +26,12 @@ class BookSerializer(serializers.ModelSerializer):
         return False
 
     def create(self, validated_data):
-        # Handle authors_input during creation
         authors_input = validated_data.pop('authors_input', '')
         book = super().create(validated_data)
         self._update_authors(book, authors_input)
         return book
 
     def update(self, instance, validated_data):
-        # Handle authors_input during update
         authors_input = validated_data.pop('authors_input', None)
         if authors_input is not None:
             self._update_authors(instance, authors_input)
@@ -47,15 +45,11 @@ class BookSerializer(serializers.ModelSerializer):
         authors = []
         for name in author_names:
             normalized_name = normalize_name(name)
-            author, _ = Author.objects.get_or_create(
-                normalized_name=normalized_name,
-                defaults={
-                    'name': name
-                }  # Store the original name
-            )
+            author, _ = Author.objects.get_or_create(normalized_name=normalized_name, defaults={
+                'name': name
+            })
             authors.append(author)
 
-        # Update the book's authors
         book.authors.set(authors)
 
 
