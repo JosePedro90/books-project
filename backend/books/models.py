@@ -5,8 +5,8 @@ from django.db import models
 def normalize_name(name):
     """Normalize author names: remove accents, extra spaces, and convert to lowercase."""
     name = unicodedata.normalize("NFKD", name).encode("ASCII", "ignore").decode("utf-8")
-    name = " ".join(name.lower().split())  # Remove múltiplos espaços e converte para lowercase
-    return name.replace(".", "")  # Remove pontos extras
+    name = " ".join(name.lower().split())
+    return name.replace(".", "")
 
 
 class Author(models.Model):
@@ -41,8 +41,8 @@ class Book(models.Model):
 
     authors = models.ManyToManyField("Author", related_name="books")
 
-    original_publication_year = models.IntegerField(null=True, blank=True)
-    original_title = models.CharField(max_length=255, null=True, blank=True)
+    original_publication_year = models.IntegerField(null=True, blank=True, db_index=True)
+    original_title = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     title = models.CharField(max_length=255, db_index=True)
 
     language_code = models.CharField(max_length=10, null=True, blank=True)

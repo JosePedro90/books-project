@@ -5,89 +5,101 @@ from celery import shared_task
 from django.db import transaction
 
 from .emails import send_ingestion_report
-from .models import Book, Author, IngestionLog
+from .models import Author, Book, IngestionLog, normalize_name
 
 
 def format_isbn(value):
-    """Ensure ISBN is stored correctly as a string without scientific notation issues."""
+    """Ensure ISBN is stored correctly as a string."""
     if not value:
         return None
     value = value.strip()
-
-    # Check if the value is in scientific notation (contains 'e'),
-    # it can result in losing leading zeros or modifying the number,
-    # especially if the number is in scientific notation.
-    if "e" in value.lower():
-        return None  # Discard
-
-    return value  # Keep it as a string to preserve leading zeros
+    if "e" in value.lower():  # Discard scientific notation values
+        return None
+    return value
 
 
 def book_exists(row):
-    """Check if a book exists based on title and authors (mandatory), and optionally isbn13 or isbn."""
-    # Create identifiers for isbn13, isbn, title, and authors
+    """Check if a book exists."""
     isbn13 = format_isbn(row.get("isbn13", ""))
     isbn = format_isbn(row.get("isbn", ""))
     title = row.get("title", "").strip()
     authors = row.get("authors", "").strip()
 
-    # Ensure title and authors are present before querying
     if not title or not authors:
-        return False  # Title and authors are mandatory, return False if either is missing
+        return False
 
-    # Create the base queryset
     queryset = Book.objects.none()
 
-    # Check isbn13 and isbn only if they are present
     if isbn13:
         queryset |= Book.objects.filter(isbn13=isbn13)
 
     if isbn:
         queryset |= Book.objects.filter(isbn=isbn)
 
-    # Always check for title and authors
     author_list = [author.strip() for author in authors.split(",")]
     queryset |= Book.objects.filter(title=title, authors__name__in=author_list)
 
-    # Return if any records match
     return queryset.exists()
 
 
 @shared_task
 def process_csv(file_data, admin_email, filename):
-    """Process CSV file where each row is handled independently to prevent blocking on failure."""
+    """Process CSV file, insert new books and authors, and log errors."""
+
     books_processed = 0
     books_inserted = 0
     books_skipped = 0
     errors = []
-    authors_cache = {}
 
     try:
         decoded_file = file_data.decode("utf-8")
         csv_reader = csv.DictReader(io.StringIO(decoded_file))
 
+        books_to_create = []
+        author_names = set()
+        rows_to_process = []
+
         for row in csv_reader:
+            rows_to_process.append(row)
             try:
-                with transaction.atomic():  # Each row has its own transaction
-                    books_processed += 1
+                books_processed += 1
+                if book_exists(row):
+                    books_skipped += 1
+                    continue
 
-                    # Check if the book already exists
-                    if book_exists(row):
-                        books_skipped += 1
-                        continue
+                authors_str = row.get("authors")
+                if authors_str:
+                    for author_name in authors_str.split(","):
+                        author_names.add(normalize_name(author_name.strip()))
+                books_to_create.append(row)
+            except Exception as e:
+                errors.append(f"Error preparing book '{row.get('title', 'Unknown')}': {str(e)}")
 
-                    authors_list = [name.strip() for name in row["authors"].split(",")]
-                    author_instances = []
+        with transaction.atomic():
+            author_instances = {}
+            existing_authors = {
+                author.normalized_name: author
+                for author in Author.objects.filter(normalized_name__in=author_names)
+            }
+            authors_to_create = []
 
-                    for author_name in authors_list:
-                        if author_name not in authors_cache:
-                            author, _ = Author.objects.get_or_create(name=author_name)
-                            authors_cache[author_name] = author
-                        author_instances.append(authors_cache[author_name])
+            for author_name in author_names:
+                if author_name not in existing_authors:
+                    original_name = next((name for name in author_names if normalize_name(name) == author_name),
+                                         author_name)
+                    authors_to_create.append(Author(name=original_name))
 
-                    # Insert the new book
-                    #TODO: Improve the way to handle missing value and type conversion
-                    book = Book.objects.create(
+            new_authors = Author.objects.bulk_create(authors_to_create)
+            for author in new_authors:
+                author_instances[author.normalized_name] = author
+
+            author_instances.update(existing_authors)
+
+            # Prepare book objects for bulk insertion
+            book_instances = []
+            for row in books_to_create:
+                try:
+                    book = Book(
                         isbn13=format_isbn(row.get("isbn13", "")),
                         isbn=format_isbn(row.get("isbn", "")),
                         goodreads_book_id=int(float(row["goodreads_book_id"]))
@@ -112,23 +124,35 @@ def process_csv(file_data, admin_email, filename):
                         work_ratings_count=int(float(row["work_ratings_count"]))
                         if row.get("work_ratings_count") else None,
                         work_text_reviews_count=int(float(row["work_text_reviews_count"]))
+                        if row.get("work_text_reviews_count") else None,
                     )
+                    book_instances.append(book)
+                except (ValueError, TypeError) as e:
+                    errors.append(f"Error converting data for '{row.get('title', 'Unknown')}': {str(e)}")
+                    continue
 
-                    # Assign authors immediately after inserting book
-                    book.authors.set(author_instances)
+            # Bulk insert books in chunks for efficiency
+            CHUNK_SIZE = 1000
+            for i in range(0, len(book_instances), CHUNK_SIZE):
+                chunk = book_instances[i:i + CHUNK_SIZE]
+                created_books = Book.objects.bulk_create(chunk)
+                for j, book in enumerate(created_books):
+                    authors_str = books_to_create[i + j].get("authors")
+                    if authors_str:
+                        authors_list = [author.strip() for author in authors_str.split(",")]
+                        book.authors.set([
+                            author_instances[normalize_name(author_name)] for author_name in authors_list
+                            if normalize_name(author_name) in author_instances
+                        ])
                     books_inserted += 1
 
-            except Exception as e:
-                errors.append(f"Error processing book '{row.get('title', 'Unknown')}': {str(e)}")
-                continue  # Continue processing next row even if this one fails
-
-        # Log the ingestion process
+        # Log ingestion details
         IngestionLog.objects.create(
             filename=filename,
             records_processed=books_inserted,
             errors="; ".join(errors) if errors else None,
         )
-        # Send report
+
         send_ingestion_report(books_processed, books_inserted, books_skipped, errors, filename, admin_email)
 
         return books_inserted, errors

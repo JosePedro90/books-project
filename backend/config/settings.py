@@ -39,7 +39,7 @@ CORS_ORIGIN_ALLOW_ALL = True
 INSTALLED_APPS = [
     'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes', 'django.contrib.sessions',
     'django.contrib.messages', 'django.contrib.staticfiles', 'corsheaders', 'rest_framework',
-    'rest_framework_simplejwt', 'books', 'reservations'
+    'rest_framework_simplejwt', 'django_filters','books', 'reservations'
 ]
 
 REST_FRAMEWORK = {

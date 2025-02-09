@@ -1,9 +1,9 @@
-from urllib import request
-
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, views, viewsets, filters, permissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .filters import BookFilter
 from .models import Book, IngestionLog
 from .serializers import (BookSerializer, IngestionLogSerializer, CSVUploadSerializer)
 from .tasks import process_csv
@@ -16,8 +16,9 @@ class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
 
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend]
     search_fields = ['title', 'authors__name', 'isbn', 'isbn13']
+    filterset_class = BookFilter
     ordering_fields = ['title', 'average_rating', 'ratings_count', 'original_publication_year']
     ordering = ['title']
 
@@ -25,6 +26,7 @@ class BookViewSet(viewsets.ModelViewSet):
         if self.action in ['list', 'retrieve']:  # Allow any for list and retrieve
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
+
 
 
 class IngestionLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -38,6 +40,7 @@ class IngestionLogViewSet(viewsets.ReadOnlyModelViewSet):
 
 class CSVUploadView(views.APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = CSVUploadSerializer
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get('file')
