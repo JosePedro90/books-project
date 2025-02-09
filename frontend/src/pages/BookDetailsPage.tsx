@@ -93,6 +93,8 @@ const BookDetailsPage = () => {
             isbn13: book.isbn13,
             average_rating: book.average_rating,
             original_publication_year: book.original_publication_year,
+            language_code: book.language_code,
+            image_url: book.image_url,
           }}
           onSubmit={handleSubmit}
         />
