@@ -15,13 +15,15 @@ import {
 
 import { useInfiniteBooks } from "../api/books";
 import BookItemCard from "../components/BookItemCard";
-import Select from "../components/ui/select";
+import Select from "../components/ui/Select";
 import debounce from "lodash/debounce";
 import { BsArrowDown, BsArrowUp } from "react-icons/bs";
+import NavIcons from "../components/NavIcons";
 
 const BookList = () => {
   const [search, setSearch] = useState("");
   const [ordering, setOrdering] = useState("");
+  const [reservationStatus, setReservationStatus] = useState<string>("all");
   const [isAscending, setIsAscending] = useState(true);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -45,10 +47,16 @@ const BookList = () => {
     setOrdering(newOrdering);
   };
 
+  const handleStatusChange = (value: string) => {
+    setReservationStatus(value);
+  };
+
   const toggleSortDirection = () => {
     setIsAscending((prev) => !prev);
     setOrdering((prev) => (prev.startsWith("-") ? prev.slice(1) : `-${prev}`));
   };
+
+  console.log("reservationStatus", reservationStatus);
 
   const {
     data: books,
@@ -57,7 +65,7 @@ const BookList = () => {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteBooks(debouncedSearch, ordering);
+  } = useInfiniteBooks(debouncedSearch, ordering, reservationStatus);
 
   if (error) {
     return (
@@ -74,17 +82,32 @@ const BookList = () => {
     { label: "Publication Year", value: "original_publication_year" },
   ];
 
+  const reservationStatusOptions = [
+    { label: "All", value: "all" },
+    { label: "Available", value: "available" },
+    { label: "Reserved", value: "reserved" },
+  ];
+
   return (
-    <Box p={4}>
-      <Heading as="h2" size="lg" mb={4} textAlign="center">
-        Book Records
-      </Heading>
+    <Box p={4} position="relative">
+      <Flex justify="space-between" align="center" mb={4}>
+        <Heading as="h2" size="lg" textAlign="center" flex="1">
+          Book Records
+        </Heading>
+        <NavIcons />
+      </Flex>
       <Stack direction="row" mb={4}>
         <Input
           type="text"
           placeholder="Search books..."
           value={search}
           onChange={handleSearchChange}
+          size="md"
+        />
+        <Select
+          options={reservationStatusOptions}
+          placeholder="Filter by status"
+          onChange={handleStatusChange}
           size="md"
         />
         <Select
@@ -122,7 +145,10 @@ const BookList = () => {
 
           {hasNextPage && (
             <Flex mt={4} justify="center">
-              <Button onClick={fetchNextPage} disabled={isFetchingNextPage}>
+              <Button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
                 Load More
               </Button>
             </Flex>

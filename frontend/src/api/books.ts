@@ -2,7 +2,11 @@ import { Book } from "../types/Book";
 import api from "./axios";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-export const useInfiniteBooks = (search: string, ordering: string) => {
+export const useInfiniteBooks = (
+  search: string,
+  ordering: string,
+  reservationStatus: string
+) => {
   const {
     data,
     isLoading,
@@ -12,11 +16,19 @@ export const useInfiniteBooks = (search: string, ordering: string) => {
     isFetchingNextPage,
   } = useInfiniteQuery({
     initialPageParam: 1,
-    queryKey: ["books", search, ordering],
+    queryKey: ["books", search, ordering, reservationStatus],
     queryFn: async ({ pageParam = 1 }) => {
       try {
         const response = await api.get("/api/books/", {
-          params: { page: pageParam, search, ordering },
+          params: {
+            page: pageParam,
+            search,
+            ordering,
+            reserved:
+              reservationStatus === "all"
+                ? undefined
+                : reservationStatus === "reserved",
+          },
         });
         return response.data;
       } catch (error) {
@@ -56,5 +68,15 @@ export const updateBook = async (
   } catch (error) {
     console.error("Error updating book:", error);
     throw error; // Re-throw the error to be handled by the caller
+  }
+};
+
+export const getBook = async (id: number): Promise<Book> => {
+  try {
+    const response = await api.get(`/api/books/${id}/`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching book:", error);
+    throw error;
   }
 };

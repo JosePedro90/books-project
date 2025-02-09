@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 const useAuth = () => {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Add isLoading state
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadTokens = async () => {

@@ -1,8 +1,11 @@
+export interface Author {
+  name: string;
+}
 export interface Book {
   id: number;
   title: string;
   original_title: string;
-  authors: { name: string }[];
+  authors: Author[];
   isbn?: string;
   isbn13?: string;
   average_rating?: number;
@@ -13,5 +16,8 @@ export interface Book {
   language_code?: string;
   goodreads_book_id?: string;
   reserved?: boolean;
-  // TODO: Add more fields
 }
+
+export type BookUpdate = Omit<Book, "authors"> & {
+  authors_input: string;
+};

@@ -43,7 +43,7 @@ const Login = () => {
           values.password
         );
         saveTokens(access, refresh);
-        navigate("/admin");
+        navigate("/books");
       } catch (error) {
         setApiError("Invalid credentials");
       }

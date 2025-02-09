@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { createListCollection } from "@chakra-ui/react";
 import {
   SelectContent,
@@ -16,6 +17,7 @@ interface SelectProps {
   width?: string;
   height?: string;
   size?: "xs" | "sm" | "md" | "lg";
+  value?: string;
 }
 
 const Select: React.FC<SelectProps> = ({
@@ -25,9 +27,18 @@ const Select: React.FC<SelectProps> = ({
   onChange,
   width = "320px",
   size = "sm",
+  value,
 }) => {
+  const [selectedValue, setSelectedValue] = useState<string | undefined>(value);
+
+  useEffect(() => {
+    setSelectedValue(value);
+  }, [value]);
+
   const handleSelectChange = (details: { value: string[] }) => {
-    onChange(details.value[0]);
+    const newValue = details.value[0];
+    setSelectedValue(newValue);
+    onChange(newValue);
   };
 
   const listCollection = createListCollection({
@@ -41,6 +52,7 @@ const Select: React.FC<SelectProps> = ({
       width={width}
       border={0}
       onValueChange={handleSelectChange}
+      value={selectedValue ? [selectedValue] : []}
     >
       {label && <SelectLabel>{label}</SelectLabel>}
       <SelectTrigger>
