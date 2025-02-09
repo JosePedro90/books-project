@@ -9,17 +9,19 @@ from .models import Author, Book, IngestionLog, normalize_name
 
 
 def format_isbn(value):
-    """Ensure ISBN is stored correctly as a string."""
+    """Ensure ISBN is stored correctly as a string without scientific notation issues."""
     if not value:
         return None
     value = value.strip()
-    if "e" in value.lower():  # Discard scientific notation values
+
+    if "e" in value.lower():
         return None
+
     return value
 
 
 def book_exists(row):
-    """Check if a book exists."""
+    """Check if a book exists based on title and authors (mandatory), and optionally isbn13 or isbn."""
     isbn13 = format_isbn(row.get("isbn13", ""))
     isbn = format_isbn(row.get("isbn", ""))
     title = row.get("title", "").strip()
@@ -42,10 +44,10 @@ def book_exists(row):
     return queryset.exists()
 
 
+#TODO: Make this a bulk operation
 @shared_task
 def process_csv(file_data, admin_email, filename):
-    """Process CSV file, insert new books and authors, and log errors."""
-
+    """Process CSV file where each row is handled independently to prevent blocking on failure."""
     books_processed = 0
     books_inserted = 0
     books_skipped = 0
@@ -55,51 +57,34 @@ def process_csv(file_data, admin_email, filename):
         decoded_file = file_data.decode("utf-8")
         csv_reader = csv.DictReader(io.StringIO(decoded_file))
 
-        books_to_create = []
-        author_names = set()
-        rows_to_process = []
-
         for row in csv_reader:
-            rows_to_process.append(row)
             try:
-                books_processed += 1
-                if book_exists(row):
-                    books_skipped += 1
-                    continue
+                with transaction.atomic():
+                    books_processed += 1
 
-                authors_str = row.get("authors")
-                if authors_str:
-                    for author_name in authors_str.split(","):
-                        author_names.add(normalize_name(author_name.strip()))
-                books_to_create.append(row)
-            except Exception as e:
-                errors.append(f"Error preparing book '{row.get('title', 'Unknown')}': {str(e)}")
+                    if book_exists(row):
+                        books_skipped += 1
+                        continue
 
-        with transaction.atomic():
-            author_instances = {}
-            existing_authors = {
-                author.normalized_name: author
-                for author in Author.objects.filter(normalized_name__in=author_names)
-            }
-            authors_to_create = []
+                    authors_list = [name.strip() for name in row["authors"].split(",")]
+                    author_instances = []
 
-            for author_name in author_names:
-                if author_name not in existing_authors:
-                    original_name = next((name for name in author_names if normalize_name(name) == author_name),
-                                         author_name)
-                    authors_to_create.append(Author(name=original_name))
+                    for author_name in authors_list:
+                        normalized_name = normalize_name(author_name)
 
-            new_authors = Author.objects.bulk_create(authors_to_create)
-            for author in new_authors:
-                author_instances[author.normalized_name] = author
+                        author = None
+                        if normalized_name:
+                            author = Author.objects.filter(normalized_name=normalized_name).first()
+                            if author:
+                                author_instances.append(author)
 
-            author_instances.update(existing_authors)
+                        if not author:
+                            author, _ = Author.objects.get_or_create(name=author_name)
+                            author.normalized_name = normalize_name(author.name)
+                            author.save()
+                            author_instances.append(author)
 
-            # Prepare book objects for bulk insertion
-            book_instances = []
-            for row in books_to_create:
-                try:
-                    book = Book(
+                    book = Book.objects.create(
                         isbn13=format_isbn(row.get("isbn13", "")),
                         isbn=format_isbn(row.get("isbn", "")),
                         goodreads_book_id=int(float(row["goodreads_book_id"]))
@@ -126,27 +111,14 @@ def process_csv(file_data, admin_email, filename):
                         work_text_reviews_count=int(float(row["work_text_reviews_count"]))
                         if row.get("work_text_reviews_count") else None,
                     )
-                    book_instances.append(book)
-                except (ValueError, TypeError) as e:
-                    errors.append(f"Error converting data for '{row.get('title', 'Unknown')}': {str(e)}")
-                    continue
 
-            # Bulk insert books in chunks for efficiency
-            CHUNK_SIZE = 1000
-            for i in range(0, len(book_instances), CHUNK_SIZE):
-                chunk = book_instances[i:i + CHUNK_SIZE]
-                created_books = Book.objects.bulk_create(chunk)
-                for j, book in enumerate(created_books):
-                    authors_str = books_to_create[i + j].get("authors")
-                    if authors_str:
-                        authors_list = [author.strip() for author in authors_str.split(",")]
-                        book.authors.set([
-                            author_instances[normalize_name(author_name)] for author_name in authors_list
-                            if normalize_name(author_name) in author_instances
-                        ])
+                    book.authors.set(author_instances)
                     books_inserted += 1
 
-        # Log ingestion details
+            except Exception as e:
+                errors.append(f"Error processing book '{row.get('title', 'Unknown')}': {str(e)}")
+                continue
+
         IngestionLog.objects.create(
             filename=filename,
             records_processed=books_inserted,
